@@ -1,7 +1,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-|
 Module      : Text.Jira.Markup
-Copyright   : © 2019 Albert Krewinkel
+Copyright   : © 2019–2020 Albert Krewinkel
 License     : MIT
 
 Maintainer  : Albert Krewinkel <tarleb@zeitkraut.de>
@@ -37,6 +37,7 @@ newtype Doc = Doc { fromDoc :: [Block] }
 data Inline
   = Anchor Text                         -- ^ anchor for internal links
   | AutoLink URL                        -- ^ URL which is also a link
+  | ColorInline ColorName [Inline]      -- ^ colored inline text
   | Emoji Icon                          -- ^ emoticon
   | Entity Text                         -- ^ named or numeric HTML entity
   | Image [Parameter] URL               -- ^ an image

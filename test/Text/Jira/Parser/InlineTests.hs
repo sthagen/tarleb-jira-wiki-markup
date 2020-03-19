@@ -1,6 +1,6 @@
 {-|
 Module      : Text.Jira.Parser.InlineTests
-Copyright   : © 2019 Albert Krewinkel
+Copyright   : © 2019–2020 Albert Krewinkel
 License     : MIT
 
 Maintainer  : Albert Krewinkel <tarleb@zeitkraut.de>
@@ -29,10 +29,13 @@ tests = testGroup "Inline"
         parseJira str "word" @?= Right (Str "word")
 
       , testCase "non-special symbols" $
-        parseJira str ",.;#%" @?= Right (Str ",.;#%")
+        parseJira str ",.#%" @?= Right (Str ",.#%")
 
       , testCase "umlauts" $
         parseJira str "äéíöüßðå" @?= Right (Str "äéíöüßðå")
+
+      , testCase "mix of alphanums and non-special chars" $
+        parseJira str "20.09" @?= Right (Str "20.09")
 
       , testCase "space fails" $
         isLeft (parseJira str " ") @?
@@ -250,6 +253,20 @@ tests = testGroup "Inline"
         isLeft (parseJira image "!hello\nworld.png!") @?
         "no newlines in image names"
       ]
+
+    , testGroup "color"
+      [ testCase "colored word" $
+        parseJira colorInline "{color:red}red{color}" @?=
+        Right (ColorInline (ColorName "red") [Str "red"])
+
+      , testCase "hex color" $
+        parseJira colorInline "{color:#526487}blueish{color}" @?=
+        Right (ColorInline (ColorName "#526487") [Str "blueish"])
+
+      , testCase "hex color without hash" $
+        parseJira colorInline "{color:526487}blueish{color}" @?=
+        Right (ColorInline (ColorName "#526487") [Str "blueish"])
+      ]
     ]
 
   , testGroup "inline parser"
@@ -269,7 +286,8 @@ tests = testGroup "Inline"
 
     , testCase "backslash-escaped char" $
       parseJira (normalizeInlines <$> many1 inline) "opening brace: \\{" @?=
-      Right [Str "opening", Space, Str "brace:", Space, SpecialChar '{']
+      Right [ Str "opening", Space, Str "brace", SpecialChar ':', Space
+            , SpecialChar '{']
 
     , testCase "icon after word" $
       parseJira (many1 inline) "checkmark(/)" @?=
@@ -285,15 +303,30 @@ tests = testGroup "Inline"
 
     , testCase "smiley between words" $
       parseJira (normalizeInlines <$> many1 inline) "verdict: :D funny" @?=
-      Right [Str "verdict:", Space, Emoji IconSmiling, Space, Str "funny"]
+      Right [ Str "verdict", SpecialChar ':', Space
+            , Emoji IconSmiling, Space, Str "funny"]
 
     , testCase "dash with spaces" $
       parseJira (many1 inline) "one  -- two" @?=
       Right [Str "one", Space, Str "–", Space, Str "two"]
 
-
     , testCase "forced markup" $
       parseJira (many1 inline) "H{~}2{~}O" @?=
       Right [Str "H", Styled Subscript [Str "2"], Str "O"]
+
+    , testCase "color in sentence" $
+      parseJira (many1 inline) "This is {color:red}red{color}." @?=
+      Right [ Str "This", Space, Str "is", Space
+            , ColorInline (ColorName "red") [Str "red"]
+            , Str "."
+            ]
+
+    , testCase "hypen between numbers" $
+      -- the hypens used to be treated as deletion markers.
+      parseJira (many1 inline) "-15 02-3" @?=
+      Right [ SpecialChar '-', Str "15" , Space, Str "02"
+            , SpecialChar '-', Str "3"
+            ]
+
     ]
   ]

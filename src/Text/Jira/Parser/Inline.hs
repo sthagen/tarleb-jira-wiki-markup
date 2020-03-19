@@ -2,7 +2,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-|
 Module      : Text.Jira.Parser.Inline
-Copyright   : © 2019 Albert Krewinkel
+Copyright   : © 2019–2020 Albert Krewinkel
 License     : MIT
 
 Maintainer  : Albert Krewinkel <tarleb@zeitkraut.de>
@@ -17,6 +17,7 @@ module Text.Jira.Parser.Inline
     -- * Inline component parsers
   , anchor
   , autolink
+  , colorInline
   , dash
   , emoji
   , entity
@@ -33,7 +34,7 @@ module Text.Jira.Parser.Inline
   ) where
 
 import Control.Monad (guard, void)
-import Data.Char (isLetter, isPunctuation, ord)
+import Data.Char (isAlphaNum, isPunctuation, ord)
 #if !MIN_VERSION_base(4,13,0)
 import Data.Monoid ((<>), All (..))
 #else
@@ -57,6 +58,7 @@ inline = notFollowedBy' blockEnd *> choice
   , link
   , image
   , styled
+  , colorInline
   , monospaced
   , anchor
   , entity
@@ -67,7 +69,7 @@ inline = notFollowedBy' blockEnd *> choice
 
 -- | Characters which, depending on context, can have a special meaning.
 specialChars :: String
-specialChars = "_+-*^~|[]{}(!&\\"
+specialChars = "_+-*^~|[]{}(!&\\:;"
 
 -- | Parses an in-paragraph newline as a @Linebreak@ element. Both newline
 -- characters and double-backslash are recognized as line-breaks.
@@ -84,12 +86,14 @@ whitespace = Space <$ skipMany1 (char ' ') <?> "whitespace"
 
 -- | Parses a simple, markup-less string into a @Str@ element.
 str :: JiraParser Inline
-str = Str . pack <$> (alphaNums <|> otherNonSpecialChars) <?> "string"
+str = Str . pack . mconcat
+  <$> many1 (alphaNums <|> otherNonSpecialChars)
+  <?> "string"
   where
     nonStrChars = " \n" ++ specialChars
     alphaNums = many1 alphaNum <* updateLastStrPos
-    otherNonSpecialChars = many1 (noneOf nonStrChars)
-
+    otherNonSpecialChars = many1 . satisfy $ \c ->
+      not (isAlphaNum c || c `elem` nonStrChars)
 
 -- | Parses an HTML entity into an @'Entity'@ element.
 entity :: JiraParser Inline
@@ -189,6 +193,19 @@ urlChar :: JiraParser Char
 urlChar = satisfy $ \c ->
   c `notElem` ("|]" :: String) && ord c >= 32 && ord c <= 127
 
+--
+-- Color
+--
+
+-- | Text in a different color.
+colorInline :: JiraParser Inline
+colorInline = try $ do
+  name <- string "{color:" *> (colorName <|> colorCode) <* char '}'
+  content <- inline `manyTill` try (string "{color}")
+  return $ ColorInline (ColorName $ pack name) content
+  where
+    colorName = many1 letter
+    colorCode = (:) <$> option '#' (char '#') <*> count 6 digit
 
 --
 -- Markup
@@ -244,4 +261,4 @@ enclosed opening closing parser = try $ do
   opening *> notFollowedBy space *> manyTill parser closing'
   where
     closing' = try $ closing <* lookAhead wordBoundary
-    wordBoundary = void (satisfy (not . isLetter)) <|> eof
+    wordBoundary = void (satisfy (not . isAlphaNum)) <|> eof

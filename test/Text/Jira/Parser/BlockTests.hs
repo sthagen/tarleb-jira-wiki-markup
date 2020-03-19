@@ -1,6 +1,6 @@
 {-|
 Module      : Text.Jira.Parser.BlockTests
-Copyright   : © 2019 Albert Krewinkel
+Copyright   : © 2019–2020 Albert Krewinkel
 License     : MIT
 
 Maintainer  : Albert Krewinkel <tarleb@zeitkraut.de>
@@ -193,6 +193,21 @@ tests = testGroup "Blocks"
                     , List CircleBullets [[Para [Str "drei"]]]
                     ]
                   ])
+
+      , testCase "indentation is ignored" $
+        let text = Text.unlines
+                   [ "        * One"
+                   , "        * Two"
+                   , "        ** Two.One"
+                   , "    * Three"
+                   ]
+        in parseJira list text @?=
+           Right (List CircleBullets
+                 [ [ Para [Str "One"] ]
+                 , [ Para [Str "Two"]
+                   , List CircleBullets [[Para [Str "Two.One"]]]]
+                 , [ Para [Str "Three"] ]
+                 ])
       ]
 
     , testGroup "Table"
