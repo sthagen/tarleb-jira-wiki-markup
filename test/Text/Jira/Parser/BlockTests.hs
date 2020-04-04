@@ -263,6 +263,18 @@ tests = testGroup "Blocks"
         parseJira table "| * foo\n- bar\n" @?=
         Right (Table [Row [BodyCell [ List CircleBullets [[Para [Str "foo"]]]
                                     , List SquareBullets [[Para [Str "bar"]]]]]])
+
+      , testCase "empty cell in row" $
+        parseJira table (Text.unlines
+                         [ "|a|b|"
+                         , "| |b|"
+                         , "|a| |"
+                         ]) @?=
+        Right (Table
+               [ Row [BodyCell [Para [Str "a"]], BodyCell [Para [Str "b"]]]
+               , Row [BodyCell [],               BodyCell [Para [Str "b"]]]
+               , Row [BodyCell [Para [Str "a"]], BodyCell []]
+               ])
       ]
 
     , testGroup "code"
@@ -321,16 +333,26 @@ tests = testGroup "Blocks"
         parseJira color "{color:red}This is red.\n{color}\n" @?=
         Right (Color (ColorName "red")
                [Para [Str "This", Space, Str "is", Space, Str "red."]])
+
+      , testCase "paragraph preceeded by newline" $
+        parseJira color "{color:#cccccc}\nThis is gray.\n{color}\n" @?=
+        Right (Color (ColorName "#cccccc")
+               [Para [ Linebreak, Str "This", Space
+                     , Str "is", Space, Str "gray."]])
       ]
 
     , testGroup "blockQuote"
-      [ testCase "single line quite before eof" $
+      [ testCase "single line right before eof" $
         parseJira blockQuote "bq. this text" @?=
         Right (BlockQuote [Para [Str "this", Space, Str "text"]])
 
       , testCase "single line blockquote" $
         parseJira blockQuote "bq. this test\n" @?=
         Right (BlockQuote [Para [Str "this", Space, Str "test"]])
+
+      , testCase "single line w\\o leading space" $
+        parseJira blockQuote "bq.another test\n" @?=
+        Right (BlockQuote [Para [Str "another", Space, Str "test"]])
 
       , testCase "multi-paragraph block quote" $
         parseJira blockQuote "{quote}\npara1\n\npara2\n{quote}\n" @?=
@@ -356,13 +378,23 @@ tests = testGroup "Blocks"
       parseJira ((,) <$> block <*> block) "h2.header\nparagraph\n" @?=
       Right (Header 2 [Str "header"], Para [Str "paragraph"])
 
-    , testCase "para before horizontal rule " $
+    , testCase "para before horizontal rule" $
       parseJira ((,) <$> block <*> return HorizontalRule) "paragraph\n----\n" @?=
       Right (Para [Str "paragraph"], HorizontalRule)
 
-    , testCase "para after horizontal rule " $
+    , testCase "para after horizontal rule" $
       parseJira ((,) <$> block <*> block) "----\nparagraph\n" @?=
       Right (HorizontalRule, Para [Str "paragraph"])
+
+    , testCase "para before blockquote" $
+      parseJira ((,) <$> block <*> block) "before\nbq. a quote\n" @?=
+      Right ( Para [Str "before"]
+            , BlockQuote [Para [Str "a", Space, Str "quote"]])
+
+    , testCase "para after blockquote" $
+      parseJira ((,) <$> block <*> block) "bq. a quote\nafter\n" @?=
+      Right ( BlockQuote [Para [Str "a", Space, Str "quote"]]
+            , Para [Str "after"] )
 
     , testCase "para after list" $
       parseJira ((,) <$> block <*> block) "* foo\n\nbar\n" @?=

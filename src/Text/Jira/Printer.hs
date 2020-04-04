@@ -62,6 +62,9 @@ prettyInlines = \case
     T.singleton c <> prettyInlines rest
   [SpecialChar c] | c `elem` [':', ';'] ->
     T.singleton c
+  -- Questionmarks don't have to be escaped unless in groups of two
+  SpecialChar '?' : rest | not (startsWithQuestionMark rest) ->
+    "?" <> prettyInlines rest
   (x:xs) ->
     renderInline x <> prettyInlines xs
 
@@ -72,6 +75,10 @@ prettyInlines = \case
     isSmileyStr = \case
       Str x | x `elem` ["D", ")", "(", "P"] -> True
       _                                     -> False
+
+    startsWithQuestionMark = \case
+      SpecialChar '?' : _ -> True
+      _                   -> False
 
 -- | Internal state used by the printer.
 data PrinterState = PrinterState
@@ -221,17 +228,15 @@ listItemToJira items = do
 renderInline :: Inline -> Text
 renderInline = \case
   Anchor name            -> "{anchor:" <> name <> "}"
-  AutoLink url           -> urlText url
+  AutoLink url           -> fromURL url
+  Citation ils           -> "??" <> prettyInlines ils <> "??"
   ColorInline color ils  -> "{color:" <> colorText color <> "}" <>
                             prettyInlines ils <> "{color}"
   Emoji icon             -> iconText icon
   Entity entity          -> "&" <> entity <> ";"
-  Image params url       -> "!" <> urlText url <>
-                            if null params
-                            then "!"
-                            else "|" <> renderParams params <> "!"
+  Image ps url           -> "!" <> fromURL url <> renderImageParams ps <> "!"
   Linebreak              -> "\n"
-  Link inlines (URL url) -> "[" <> prettyInlines inlines <> "|" <> url <> "]"
+  Link lt ils url        -> renderLink lt ils url
   Monospaced inlines     -> "{{" <> prettyInlines inlines <> "}}"
   Space                  -> " "
   SpecialChar c          -> case c of
@@ -246,6 +251,17 @@ renderStyledSafely style =
   let delim = T.pack ['{', delimiterChar style, '}']
   in (delim <>) . (<> delim) . prettyInlines
 
+renderLink :: LinkType -> [Inline] -> URL -> Text
+renderLink linkType inlines url = case linkType of
+  Attachment -> "[" <> prettyInlines inlines <> "^" <> fromURL url <> "]"
+  Email      -> link' $ "mailto:" <> fromURL url
+  External   -> link' $ fromURL url
+  User       -> link' $ "~" <> fromURL url
+ where
+  link' urlText = case inlines of
+    [] -> "[" <> urlText <> "]"
+    _  -> "[" <> prettyInlines inlines <> "|" <> urlText <> "]"
+
 delimiterChar :: InlineStyle -> Char
 delimiterChar = \case
   Emphasis -> '_'
@@ -255,9 +271,12 @@ delimiterChar = \case
   Subscript -> '~'
   Superscript -> '^'
 
--- | Text rendering of an URL.
-urlText :: URL -> Text
-urlText (URL url) = url
+-- | Render image parameters (i.e., separate by comma).
+renderImageParams :: [Parameter] -> Text
+renderImageParams = \case
+  [] -> ""
+  ps | "thumbnail" `elem` map parameterKey ps -> "|thumbnail"
+  ps -> "|" <> T.intercalate ", " (map renderParam ps)
 
 renderWrapped :: Char -> [Inline] -> Text
 renderWrapped c = T.cons c . flip T.snoc c . prettyInlines

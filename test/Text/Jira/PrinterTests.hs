@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 {-|
 Module      : Text.Jira.PrinterTests
 Copyright   : © 2019–2020 Albert Krewinkel
@@ -12,7 +13,8 @@ Tests for the jira wiki printer.
 module Text.Jira.PrinterTests (tests) where
 
 import Prelude hiding (unlines)
-import Data.Text (Text, unlines)
+import Data.String (IsString (fromString))
+import Data.Text (Text, pack, unlines)
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit (testCase, (@?=))
 import Text.Jira.Markup
@@ -116,8 +118,43 @@ tests = testGroup "Printer"
       renderInline (AutoLink (URL "https://example.org")) @?=
       "https://example.org"
 
+    , testCase "citation" $
+      renderInline (Citation [Str "John", Space, Str "Doe"]) @?=
+      "??John Doe??"
+
     , testCase "Emoji" $
       renderInline (Emoji IconSmiling) @?= ":D"
+
+    , testCase "thumbnail" $
+      renderInline (Image [Parameter "thumbnail" ""] (URL "example.jpg")) @?=
+      "!example.jpg|thumbnail!"
+
+    , testCase "image attributes" $
+      let params = [Parameter "align" "right", Parameter "vspace" "4"]
+      in renderInline (Image params (URL "example.jpg")) @?=
+         "!example.jpg|align=right, vspace=4!"
+
+    , testGroup "link"
+      [ testCase "external link" $
+        renderInline (Link External [Str "example"] "https://example.org") @?=
+        "[example|https://example.org]"
+
+      , testCase "email link" $
+        renderInline (Link Email [Str "example"] "me@example.org") @?=
+        "[example|mailto:me@example.org]"
+
+      , testCase "attachment" $
+        renderInline (Link Attachment [Str "a", Space, Str "b"] "test.txt") @?=
+        "[a b^test.txt]"
+
+      , testCase "attachment without description" $
+        renderInline (Link Attachment [] "something.txt") @?=
+        "[^something.txt]"
+
+      , testCase "user" $
+        renderInline (Link User [Str "John", Space, Str "Doe"] "ab34-cdef") @?=
+        "[John Doe|~ab34-cdef]"
+      ]
 
     , testCase "Styled Emphasis" $
       renderInline (Styled Emphasis [Str "Hello,", Space, Str "World!"]) @?=
@@ -167,8 +204,21 @@ tests = testGroup "Printer"
       -- escaping the paren is enough
       prettyInlines [SpecialChar ':', SpecialChar '('] @?=
       ":\\("
+
+    , testGroup "question marks"
+      [ testCase "escaped if followed by question mark" $
+        prettyInlines [SpecialChar '?', SpecialChar '?'] @?=
+        "\\??"
+
+      , testCase "unescaped before space" $
+        prettyInlines [SpecialChar '?', Space, Str "foo"] @?=
+        "? foo"
+      ]
     ]
   ]
 
 renderBlock' :: Block -> Text
 renderBlock' = withDefault . renderBlock
+
+instance IsString URL where
+  fromString = URL . pack

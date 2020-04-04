@@ -135,6 +135,10 @@ tests = testGroup "Inline"
         parseJira styled "-far-fetched-" @?=
         Right (Styled Strikeout [Str "far", SpecialChar '-', Str "fetched"])
 
+      , testCase "symbol before closing char" $
+        parseJira styled "-backwards<-" @?=
+        Right (Styled Strikeout [Str "backwards<"])
+
       , testGroup "emphasis"
         [ testCase "single word" $
           parseJira styled "_single_" @?= Right (Styled Emphasis [Str "single"])
@@ -224,24 +228,52 @@ tests = testGroup "Inline"
         Right (AutoLink (URL "mailto:nobody@test.invalid"))
       ]
 
+    , testGroup "citation"
+      [ testCase "name" $
+        parseJira citation "??John Doe??" @?=
+        Right (Citation [Str "John", Space, Str "Doe"])
+
+      , testCase "with markup" $
+        parseJira citation "??Jane *Example* Doe??" @?=
+        Right (Citation [ Str "Jane", Space, Styled Strong [Str "Example"]
+                        , Space, Str "Doe"])
+      ]
+
     , testGroup "link"
       [ testCase "unaliased link" $
         parseJira link "[https://example.org]" @?=
-        Right (Link [] (URL "https://example.org"))
+        Right (Link External [] (URL "https://example.org"))
 
       , testCase "aliased link" $
         parseJira link "[Example|https://example.org]" @?=
-        Right (Link [Str "Example"] (URL "https://example.org"))
+        Right (Link External [Str "Example"] (URL "https://example.org"))
 
       , testCase "alias with emphasis" $
         parseJira link "[_important_ example|https://example.org]" @?=
-        Right (Link [Styled Emphasis [Str "important"], Space, Str "example"]
+        Right (Link External
+               [Styled Emphasis [Str "important"], Space, Str "example"]
                 (URL "https://example.org"))
 
       , testCase "mail address" $
         parseJira link "[send mail|mailto:me@nope.invalid]" @?=
-        Right (Link [Str "send", Space, Str "mail"]
-               (URL "mailto:me@nope.invalid"))
+        Right (Link Email [Str "send", Space, Str "mail"]
+               (URL "me@nope.invalid"))
+
+      , testCase "attachment link" $
+        parseJira link "[testing^test.xml]" @?=
+        Right (Link Attachment [Str "testing"] (URL "test.xml"))
+
+      , testCase "attachment without description" $
+        parseJira link "[^results.txt]" @?=
+        Right (Link Attachment [] (URL "results.txt"))
+
+      , testCase "user link" $
+        parseJira link "[testing|~account-id:something]" @?=
+        Right (Link User [Str "testing"] (URL "account-id:something"))
+
+      , testCase "user without description" $
+        parseJira link "[~username]" @?=
+        Right (Link User [] (URL "username"))
       ]
 
     , testGroup "image"
@@ -252,6 +284,17 @@ tests = testGroup "Inline"
       , testCase "no newlines" $
         isLeft (parseJira image "!hello\nworld.png!") @?
         "no newlines in image names"
+
+      , testCase "thumbnail" $
+        parseJira image "!image.png|thumbnail!" @?=
+        Right (Image [Parameter "thumbnail" ""] (URL "image.png"))
+
+      , testCase "parameters" $
+        parseJira image "!image.gif|align=right, vspace=4!" @?=
+        let params = [ Parameter "align" "right"
+                     , Parameter "vspace" "4"
+                     ]
+        in Right (Image params (URL "image.gif"))
       ]
 
     , testGroup "color"
@@ -264,8 +307,8 @@ tests = testGroup "Inline"
         Right (ColorInline (ColorName "#526487") [Str "blueish"])
 
       , testCase "hex color without hash" $
-        parseJira colorInline "{color:526487}blueish{color}" @?=
-        Right (ColorInline (ColorName "#526487") [Str "blueish"])
+        parseJira colorInline "{color:526Ab7}blueish{color}" @?=
+        Right (ColorInline (ColorName "#526Ab7") [Str "blueish"])
       ]
     ]
 
@@ -328,5 +371,11 @@ tests = testGroup "Inline"
             , SpecialChar '-', Str "3"
             ]
 
+    , testCase "ascii arrows" $
+      -- the hypens used to be treated as deletion markers.
+      parseJira (many1 inline) "-> step ->" @?=
+      Right [ SpecialChar '-', Str ">" , Space, Str "step", Space
+            , SpecialChar '-', Str ">"
+            ]
     ]
   ]

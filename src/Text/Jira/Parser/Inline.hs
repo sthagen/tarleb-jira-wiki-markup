@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TupleSections #-}
 {-|
 Module      : Text.Jira.Parser.Inline
 Copyright   : © 2019–2020 Albert Krewinkel
@@ -11,12 +12,12 @@ Portability : portable
 
 Parse Jira wiki inline markup.
 -}
-
 module Text.Jira.Parser.Inline
   ( inline
     -- * Inline component parsers
   , anchor
   , autolink
+  , citation
   , colorInline
   , dash
   , emoji
@@ -61,6 +62,7 @@ inline = notFollowedBy' blockEnd *> choice
   , colorInline
   , monospaced
   , anchor
+  , citation
   , entity
   , specialChar
   ] <?> "inline"
@@ -69,7 +71,7 @@ inline = notFollowedBy' blockEnd *> choice
 
 -- | Characters which, depending on context, can have a special meaning.
 specialChars :: String
-specialChars = "_+-*^~|[]{}(!&\\:;"
+specialChars = "_+-*^~|[]{}(?!&\\:;"
 
 -- | Parses an in-paragraph newline as a @Linebreak@ element. Both newline
 -- characters and double-backslash are recognized as line-breaks.
@@ -78,11 +80,13 @@ linebreak = Linebreak <$ try (
   choice [ void $ newline <* notFollowedBy' endOfPara
          , void $ string "\\\\" <* notFollowedBy' (char '\\')
          ]
+    <* updateLastSpcPos
   ) <?> "linebreak"
 
 -- | Parses whitespace and return a @Space@ element.
 whitespace :: JiraParser Inline
-whitespace = Space <$ skipMany1 (char ' ') <?> "whitespace"
+whitespace = Space <$ skipMany1 (char ' ') <* updateLastSpcPos
+  <?> "whitespace"
 
 -- | Parses a simple, markup-less string into a @Str@ element.
 str :: JiraParser Inline
@@ -129,7 +133,7 @@ specialChar = SpecialChar <$> (escapedChar <|> plainSpecialChar)
         return $ if b then All . (/= '|') else mempty
       inLinkPred  <- do
         b <- stateInLink  <$> getState
-        return $ if b then All . (`notElem` ("]|\n" :: String)) else mempty
+        return $ if b then All . (`notElem` ("]^|\n" :: String)) else mempty
       oneOf $ filter (getAll . (inTablePred <> inLinkPred)) specialChars
 
 
@@ -147,9 +151,15 @@ image :: JiraParser Inline
 image = try $ do
   -- does not use @url@, as is may contain relative locations.
   src <- char '!' *> (URL . pack <$> many1 (noneOf "\r\t\n|]!"))
-  (_, params) <- option (Nothing, []) (char '|' *> parameters)
+  params <- option [] (char '|' *> (thumbnail <|> imgParams `sepBy` comma))
   _ <- char '!'
   return $ Image params src
+  where
+    thumbnail = [Parameter "thumbnail" ""] <$ try (string "thumbnail")
+    imgParams = try (Parameter <$> key <*> (char '=' *> value))
+    key       = pack <$> many1 (noneOf ",\"'\t\n\r |{}=!")
+    value     = pack <$> many1 (noneOf ",\"'\n\r|{}=!")
+    comma     = char ',' *> skipSpaces
 
 -- | Parse link into a @Link@ element.
 link :: JiraParser Inline
@@ -157,13 +167,19 @@ link = try $ do
   guard . not . stateInLink =<< getState
   withStateFlag (\b st -> st { stateInLink = b }) $ do
     _ <- char '['
-    alias   <- option [] $ try (many inline <* char '|')
-    linkUrl <- email <|> url
+    (alias, sep) <- option ([], '|') . try $ (,) <$> many inline <*> oneOf "^|"
+    (linkType, linkURL) <- if sep == '|'
+                           then (Email,) <$> email <|>
+                                (External,) <$> url <|>
+                                (User,) <$> userLink
+                           else (Attachment,) . URL . pack <$> many1 urlChar
     _ <- char ']'
-    return $ Link alias linkUrl
+    return $ Link linkType alias linkURL
 
+-- | Parse a plain URL or mail address as @'AutoLink'@ element.
 autolink :: JiraParser Inline
-autolink = AutoLink <$> (email <|> url) <?> "email or other URL"
+autolink = AutoLink <$> (email' <|> url) <?> "email or other URL"
+  where email' = (\(URL e) -> URL ("mailto:" <> e)) <$> email
 
 -- | Parse a URL with scheme @file@, @ftp@, @http@, @https@, @irc@, @nntp@, or
 -- @news@.
@@ -183,10 +199,13 @@ url = try $ do
         'n' -> ("nntp" <$ string "ntp") <|> ("news" <$ string "ews")
         _   -> fail "not looking at a known scheme"
 
--- | Parses an E-mail URL.
+-- | Parses an email URI, returns the mail address without schema.
 email :: JiraParser URL
-email = URL . pack <$> try
-  ((++) <$> string "mailto:" <*> many1 urlChar)
+email = URL . pack <$> try (string "mailto:" *> many1 urlChar)
+
+-- | Parses a user-identifying resource name
+userLink :: JiraParser URL
+userLink = URL . pack <$> (char '~' *> many (noneOf "|]\n\r"))
 
 -- | Parses a character which is allowed in URLs
 urlChar :: JiraParser Char
@@ -200,12 +219,9 @@ urlChar = satisfy $ \c ->
 -- | Text in a different color.
 colorInline :: JiraParser Inline
 colorInline = try $ do
-  name <- string "{color:" *> (colorName <|> colorCode) <* char '}'
+  name <- string "{color:" *> colorName <* char '}'
   content <- inline `manyTill` try (string "{color}")
   return $ ColorInline (ColorName $ pack name) content
-  where
-    colorName = many1 letter
-    colorCode = (:) <$> option '#' (char '#') <*> count 6 digit
 
 --
 -- Markup
@@ -245,6 +261,11 @@ monospaced = Monospaced
   <$> enclosed (try $ string "{{") (try $ string "}}") inline
   <?> "monospaced"
 
+citation :: JiraParser Inline
+citation = Citation
+  <$> enclosed (try $ string "??") (try $ string "??") inline
+  <?> "citation"
+
 --
 -- Helpers
 --
@@ -260,5 +281,7 @@ enclosed opening closing parser = try $ do
   guard =<< notAfterString
   opening *> notFollowedBy space *> manyTill parser closing'
   where
-    closing' = try $ closing <* lookAhead wordBoundary
+    closing' = try $ do
+      guard . not =<< afterSpace
+      closing <* lookAhead wordBoundary
     wordBoundary = void (satisfy (not . isAlphaNum)) <|> eof

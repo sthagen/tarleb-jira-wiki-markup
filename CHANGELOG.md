@@ -4,6 +4,79 @@ Changelog
 `jira-wiki-markup` uses [PVP Versioning][1].
 The changelog is available [on GitHub][2].
 
+1.3.0
+-----
+
+Released 2020-04-04
+
+* Support was added for additional syntax constructs:
+
+    - citation markup (`??citation??`),
+    - links to attachments (`[title^attachment.ext]`), and
+    - user links (`[~username]`).
+
+* Changes to module `Text.Jira.Markup`:
+
+    * A new data type `LinkType` is exported from the module.
+
+    * Changes to type `Inline`:
+
+        - a new constructor `Citation` has been added;
+        - the `Link` constructor now takes an additional
+          parameter of type `LinkType`.
+
+1.2.1
+-----
+
+Released 2020-04-02
+
+* Fixed rendering of image attributes: image attributes are
+  separated by commas instead of pipes; the latter are used in
+  block parameters.
+
+* Fixed parsing of blockquotes which are not preceeded by blank
+  lines.
+
+* Ensure parsing of single-line blockquotes is possible even if
+  there is no space between `bq.` marker and contents.
+
+* Fixed parsing of colors: parsing no longer fails for hexcolors
+  which contain non-decimal digits.
+
+* Changes to module `Text.Jira.Parser.Shared`:
+
+    - New parsing function `colorName` which parses a color
+      descriptor, i.e. either a name or a hexcolor.
+
+1.2.0
+-----
+
+Released 2020-03-28
+
+* Added check that a closing markup char is not preceeded by a
+  whitespace character. Previously, plain text was still
+  incorrectly treated as markup. E.g., the dashes in `-> step ->`
+  used to be interpreted as delimiters marking deleted text.
+
+* Allows empty table cells; table parsing failed if one of the
+  cells did not contain any content.
+
+* Changes to module `Text.Jira.Parser.Core`:
+
+    - A field `stateLastSpcPos` was added to data type
+      `ParserState` to keep track of spaces.
+    - Function `updateLastSpcPos` was added to update the
+      aforementioned field.
+    - Function `afterSpace` was added to test the field.
+
+1.1.4
+-----
+
+Released 2020-03-27
+
+* Fixed parsing of image parameters. Thumbnails and images with
+  parameters were previously not recognized as images.
+
 1.1.3
 -----
 

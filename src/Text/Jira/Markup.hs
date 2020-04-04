@@ -15,6 +15,7 @@ module Text.Jira.Markup
   , Block (..)
   , Inline (..)
   , InlineStyle (..)
+  , LinkType (..)
   , ListStyle (..)
   , URL (..)
   , ColorName (..)
@@ -37,12 +38,13 @@ newtype Doc = Doc { fromDoc :: [Block] }
 data Inline
   = Anchor Text                         -- ^ anchor for internal links
   | AutoLink URL                        -- ^ URL which is also a link
+  | Citation [Inline]                   -- ^ source of a citation
   | ColorInline ColorName [Inline]      -- ^ colored inline text
   | Emoji Icon                          -- ^ emoticon
   | Entity Text                         -- ^ named or numeric HTML entity
   | Image [Parameter] URL               -- ^ an image
   | Linebreak                           -- ^ hard linebreak
-  | Link [Inline] URL                   -- ^ hyperlink with alias
+  | Link LinkType [Inline] URL          -- ^ hyperlink with alias
   | Monospaced [Inline]                 -- ^ text rendered with monospaced font
   | Space                               -- ^ space between words
   | SpecialChar Char                    -- ^ single char with special meaning
@@ -58,6 +60,14 @@ data InlineStyle
   | Strong                              -- ^ strongly emphasized text
   | Subscript                           -- ^ subscript text
   | Superscript                         -- ^ superscript text
+  deriving (Eq, Ord, Show)
+
+-- | Type of a link.
+data LinkType
+  = Attachment                          -- ^ link to an attachment
+  | Email                               -- ^ link to an email address
+  | External                            -- ^ external resource, like a website
+  | User                                -- ^ link to a user
   deriving (Eq, Ord, Show)
 
 -- | Blocks of text.
