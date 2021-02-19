@@ -1,6 +1,6 @@
 {-|
 Module      : Text.Jira.Parser.Core
-Copyright   : © 2019–2020 Albert Krewinkel
+Copyright   : © 2019–2021 Albert Krewinkel
 License     : MIT
 
 Maintainer  : Albert Krewinkel <tarleb@zeitkraut.de>
@@ -26,6 +26,7 @@ module Text.Jira.Parser.Core
   -- * Parsing helpers
   , endOfPara
   , notFollowedBy'
+  , many1Till
   , blankline
   , skipSpaces
   , blockNames
@@ -44,6 +45,7 @@ type JiraParser = Parsec Text ParserState
 data ParserState = ParserState
   { stateInLink      :: Bool            -- ^ whether the parser is within a link
   , stateInList      :: Bool            -- ^ whether the parser is within a list
+  , stateInMarkup    :: Bool            -- ^ whether the parser is within markup
   , stateInTable     :: Bool            -- ^ whether the parser is within a table
   , stateLastSpcPos  :: Maybe SourcePos -- ^ most recent space char position
   , stateLastStrPos  :: Maybe SourcePos -- ^ position at which the last string
@@ -55,6 +57,7 @@ defaultState :: ParserState
 defaultState = ParserState
   { stateInLink      = False
   , stateInList      = False
+  , stateInMarkup    = False
   , stateInTable     = False
   , stateLastSpcPos  = Nothing
   , stateLastStrPos  = Nothing
@@ -130,6 +133,17 @@ parameters = option (Nothing, []) $ do
     key      = pack <$> many1 (noneOf "\"'\t\n\r |{}=")
     value    = pack <$> many1 (noneOf "\"'\n\r|{}=")
     language = key <* (pipe <|> lookAhead (char '}'))
+
+-- | Like @manyTill@, but reads at least one item.
+many1Till :: (Show end)
+          => JiraParser a
+          -> JiraParser end
+          -> JiraParser [a]
+many1Till p end = do
+  notFollowedBy' end
+  first <- p
+  rest <- manyTill p end
+  return (first:rest)
 
 -- | Succeeds if the parser is looking at the end of a paragraph.
 endOfPara :: JiraParser ()

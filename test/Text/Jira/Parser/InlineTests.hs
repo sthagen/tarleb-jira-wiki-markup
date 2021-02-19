@@ -1,6 +1,6 @@
 {-|
 Module      : Text.Jira.Parser.InlineTests
-Copyright   : © 2019–2020 Albert Krewinkel
+Copyright   : © 2019–2021 Albert Krewinkel
 License     : MIT
 
 Maintainer  : Albert Krewinkel <tarleb@zeitkraut.de>
@@ -164,6 +164,9 @@ tests = testGroup "Inline"
         , testCase "require word boundary after closing underscore" $
           isLeft (parseJira styled "_nope_nope") @? "no boundary after closing"
 
+        , testCase "disallow newline in markup" $
+          isLeft (parseJira styled "_eol\nnext line_") @? "newline in markup"
+
         , testCase "zero with space as word boundary" $
           parseJira ((,) <$> styled <*> str) "_yup_\8203next" @?=
           Right (Styled Emphasis [Str "yup"], Str "\8203next")
@@ -253,6 +256,17 @@ tests = testGroup "Inline"
         Right (Link External
                [Styled Emphasis [Str "important"], Space, Str "example"]
                 (URL "https://example.org"))
+
+      , testCase "alias with URL" $
+        parseJira link "[https://example.org website|https://example.org]" @?=
+        Right (Link External
+                [ Str "https", SpecialChar ':', Str "//example.org"
+                , Space, Str "website"]
+                (URL "https://example.org"))
+
+      , testCase "link to anchor" $
+        parseJira link "[see here|#there]" @?=
+        Right (Link External [Str "see", Space, Str "here"] (URL "#there"))
 
       , testCase "mail address" $
         parseJira link "[send mail|mailto:me@nope.invalid]" @?=
@@ -377,5 +391,11 @@ tests = testGroup "Inline"
       Right [ SpecialChar '-', Str ">" , Space, Str "step", Space
             , SpecialChar '-', Str ">"
             ]
+
+    , testCase "long ascii arrow" $
+      parseJira (many1 inline) "click --> done" @?=
+      Right [ Str "click", Space, SpecialChar '-', SpecialChar '-'
+            , Str ">", Space, Str "done"]
+
     ]
   ]

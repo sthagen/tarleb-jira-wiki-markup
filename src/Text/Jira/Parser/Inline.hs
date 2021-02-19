@@ -3,7 +3,7 @@
 {-# LANGUAGE TupleSections #-}
 {-|
 Module      : Text.Jira.Parser.Inline
-Copyright   : © 2019–2020 Albert Krewinkel
+Copyright   : © 2019–2021 Albert Krewinkel
 License     : MIT
 
 Maintainer  : Albert Krewinkel <tarleb@zeitkraut.de>
@@ -76,12 +76,13 @@ specialChars = "_+-*^~|[]{}(?!&\\:;"
 -- | Parses an in-paragraph newline as a @Linebreak@ element. Both newline
 -- characters and double-backslash are recognized as line-breaks.
 linebreak :: JiraParser Inline
-linebreak = Linebreak <$ try (
+linebreak = (<?> "linebreak") . try $ do
+  guard . not . stateInMarkup =<< getState
   choice [ void $ newline <* notFollowedBy' endOfPara
          , void $ string "\\\\" <* notFollowedBy' (char '\\')
          ]
-    <* updateLastSpcPos
-  ) <?> "linebreak"
+  updateLastSpcPos
+  return Linebreak
 
 -- | Parses whitespace and return a @Space@ element.
 whitespace :: JiraParser Inline
@@ -171,6 +172,7 @@ link = try $ do
     (linkType, linkURL) <- if sep == '|'
                            then (Email,) <$> email <|>
                                 (External,) <$> url <|>
+                                (External,) <$> anchorLink <|>
                                 (User,) <$> userLink
                            else (Attachment,) . URL . pack <$> many1 urlChar
     _ <- char ']'
@@ -178,8 +180,10 @@ link = try $ do
 
 -- | Parse a plain URL or mail address as @'AutoLink'@ element.
 autolink :: JiraParser Inline
-autolink = AutoLink <$> (email' <|> url) <?> "email or other URL"
-  where email' = (\(URL e) -> URL ("mailto:" <> e)) <$> email
+autolink = do
+  guard . not . stateInLink =<< getState
+  AutoLink <$> (email' <|> url) <?> "email or other URL"
+    where email' = (\(URL e) -> URL ("mailto:" <> e)) <$> email
 
 -- | Parse a URL with scheme @file@, @ftp@, @http@, @https@, @irc@, @nntp@, or
 -- @news@.
@@ -202,6 +206,10 @@ url = try $ do
 -- | Parses an email URI, returns the mail address without schema.
 email :: JiraParser URL
 email = URL . pack <$> try (string "mailto:" *> many1 urlChar)
+
+-- | Parses the link to an anchor name.
+anchorLink :: JiraParser URL
+anchorLink = URL . pack <$> ((:) <$> char '#' <*> many1 urlChar)
 
 -- | Parses a user-identifying resource name
 userLink :: JiraParser URL
@@ -233,7 +241,7 @@ styled = (simpleStyled <|> forceStyled) <?> "styled text"
   where
     simpleStyled = try $ do
       styleChar <- lookAhead $ oneOf "-_+*~^"
-      content   <- styleChar `delimitingMany` inline
+      content   <- noNewlines $ styleChar `delimitingMany` inline
       let style = delimiterStyle styleChar
       return $ Styled style content
 
@@ -241,8 +249,13 @@ styled = (simpleStyled <|> forceStyled) <?> "styled text"
       styleChar <- char '{' *> oneOf "-_+*~^" <* char '}'
       let closing = try $ string ['{', styleChar, '}']
       let style   = delimiterStyle styleChar
-      content   <- manyTill inline closing
+      content   <- noNewlines $ manyTill inline closing
       return $ Styled style content
+
+-- | Makes sure that the wrapped parser does not parse inline
+-- linebreaks.
+noNewlines :: JiraParser a -> JiraParser a
+noNewlines = withStateFlag (\b st -> st { stateInMarkup = b })
 
 -- | Returns the markup kind from the delimiting markup character.
 delimiterStyle :: Char -> InlineStyle
@@ -274,12 +287,13 @@ citation = Citation
 delimitingMany :: Char -> JiraParser a -> JiraParser [a]
 delimitingMany c = enclosed (char c) (char c)
 
-enclosed :: JiraParser opening -> JiraParser closing
+enclosed :: Show closing
+         => JiraParser opening -> JiraParser closing
          -> JiraParser a
          -> JiraParser [a]
 enclosed opening closing parser = try $ do
   guard =<< notAfterString
-  opening *> notFollowedBy space *> manyTill parser closing'
+  opening *> notFollowedBy space *> many1Till parser closing'
   where
     closing' = try $ do
       guard . not =<< afterSpace
