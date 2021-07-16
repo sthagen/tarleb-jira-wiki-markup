@@ -108,6 +108,32 @@ tests = testGroup "Printer"
       let list = List Enumeration [[Para [Str "boring"]]]
           para = Para [Str "after", Space, Str "table"]
       in prettyBlocks [list, para] @?= "# boring\n\nafter table\n"
+
+    , testGroup "block quote"
+      [ testCase "single-line block quote" $
+        let bq = BlockQuote [Para
+                   [Str "Errare", Space, Str "humanum", Space, Str "est."]
+                 ]
+        in prettyBlocks [bq] @?= "bq. Errare humanum est."
+
+      , testCase "multi-line block quote" $
+        let bq = BlockQuote [Para [Str "Show", Linebreak, Str "me"]]
+        in prettyBlocks [bq] @?= "{quote}\nShow\nme\n{quote}"
+
+      , testCase "multi-paragraph block quote" $
+        let bq = BlockQuote [Para [Str "Only."], Para [Str "You."]]
+        in prettyBlocks [bq] @?= "{quote}\nOnly.\n\nYou.\n{quote}"
+      ]
+
+    , testGroup "panel"
+      [ testCase "simple panel" $
+        let panel = Panel [] [Para [Str "Contents!"]]
+        in prettyBlocks [panel] @?= "{panel}\nContents!\n{panel}"
+
+      , testCase "panel with title" $
+        let panel = Panel [Parameter "title" "Gimme"] [Para [Str "Contents!"]]
+        in prettyBlocks [panel] @?= "{panel:title=Gimme}\nContents!\n{panel}"
+      ]
     ]
 
   , testGroup "isolated inline"
@@ -151,9 +177,23 @@ tests = testGroup "Printer"
         renderInline (Link Attachment [] "something.txt") @?=
         "[^something.txt]"
 
+      , testCase "attachment with space and Unicode" $
+        renderInline (Link Attachment [] "Übergang links.txt") @?=
+        "[^Übergang links.txt]"
+
       , testCase "user" $
         renderInline (Link User [Str "John", Space, Str "Doe"] "ab34-cdef") @?=
         "[John Doe|~ab34-cdef]"
+
+      , testCase "smart link" $
+        renderInline (Link SmartLink [Str "repo"]
+                      "https://github.com/tarleb/jira-wiki-markup") @?=
+        "[repo|https://github.com/tarleb/jira-wiki-markup|smart-link]"
+
+      , testCase "smart card" $
+        renderInline (Link SmartCard [Str "hslua"]
+                      "https://github.com/hslua/hslua") @?=
+        "[hslua|https://github.com/hslua/hslua|smart-card]"
       ]
 
     , testCase "Styled Emphasis" $

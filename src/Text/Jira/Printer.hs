@@ -141,11 +141,12 @@ renderBlock = \case
                               , blks
                               , "{color}"
                               ]
-  BlockQuote [Para xs]     -> return $ "bq. " <> prettyInlines xs
+  BlockQuote [Para xs] | Linebreak `notElem` xs
+                           -> return $ "bq. " <> prettyInlines xs
   BlockQuote blocks        -> renderBlocks blocks >>= \blks -> return $ T.concat
                               [ "{quote}\n"
                               , blks
-                              , "\n{quote}"]
+                              , "{quote}"]
   Header lvl inlines       -> return $ T.concat
                               [ "h",  T.pack (show lvl), ". "
                               , prettyInlines inlines
@@ -263,11 +264,15 @@ renderLink linkType inlines url = case linkType of
   Attachment -> "[" <> prettyInlines inlines <> "^" <> fromURL url <> "]"
   Email      -> link' $ "mailto:" <> fromURL url
   External   -> link' $ fromURL url
+  SmartCard  -> smartLink (fromURL url) "smart-card"
+  SmartLink  -> smartLink (fromURL url) "smart-link"
   User       -> link' $ "~" <> fromURL url
  where
   link' urlText = case inlines of
     [] -> "[" <> urlText <> "]"
     _  -> "[" <> prettyInlines inlines <> "|" <> urlText <> "]"
+  smartLink urlText smartType =
+    "[" <> prettyInlines inlines <> "|" <> urlText <> "|" <> smartType <> "]"
 
 delimiterChar :: InlineStyle -> Char
 delimiterChar = \case

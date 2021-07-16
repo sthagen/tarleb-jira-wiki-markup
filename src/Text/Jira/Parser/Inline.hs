@@ -35,7 +35,7 @@ module Text.Jira.Parser.Inline
   ) where
 
 import Control.Monad (guard, void)
-import Data.Char (isAlphaNum, isPunctuation, ord)
+import Data.Char (isAlphaNum, isAscii, isPunctuation, ord)
 #if !MIN_VERSION_base(4,13,0)
 import Data.Monoid ((<>), All (..))
 #else
@@ -110,7 +110,7 @@ entity = Entity . pack
 
 -- | Parses textual representation of an icon into an @'Emoji'@ element.
 emoji :: JiraParser Inline
-emoji = Emoji <$> icon <* notFollowedBy' letter <?> "emoji"
+emoji = try (Emoji <$> icon <* notFollowedBy' letter <?> "emoji")
 
 -- | Parses ASCII representation of en-dash or em-dash.
 dash :: JiraParser Inline
@@ -159,8 +159,10 @@ image = try $ do
     thumbnail = [Parameter "thumbnail" ""] <$ try (string "thumbnail")
     imgParams = try (Parameter <$> key <*> (char '=' *> value))
     key       = pack <$> many1 (noneOf ",\"'\t\n\r |{}=!")
-    value     = pack <$> many1 (noneOf ",\"'\n\r|{}=!")
+    value     = pack <$> (try quotedValue <|> unquotedValue)
     comma     = char ',' *> skipSpaces
+    quotedValue = char '"' *> manyTill (noneOf "\n\r") (char '"')
+    unquotedValue = many1 (noneOf ",\"'\n\r|{}=!")
 
 -- | Parse link into a @Link@ element.
 link :: JiraParser Inline
@@ -169,12 +171,14 @@ link = try $ do
   withStateFlag (\b st -> st { stateInLink = b }) $ do
     _ <- char '['
     (alias, sep) <- option ([], '|') . try $ (,) <$> many inline <*> oneOf "^|"
-    (linkType, linkURL) <- if sep == '|'
-                           then (Email,) <$> email <|>
-                                (External,) <$> url <|>
-                                (External,) <$> anchorLink <|>
-                                (User,) <$> userLink
-                           else (Attachment,) . URL . pack <$> many1 urlChar
+    (linkType, linkURL) <-
+      if sep == '|'
+      then (Email,) <$> email <|>
+           (External,) <$> anchorLink <|>
+           (User,) <$> userLink <|>
+           externalLink
+      else (Attachment,) . URL . pack <$>
+           many1 (noneOf "\t\r\f\n]|:;/\\")
     _ <- char ']'
     return $ Link linkType alias linkURL
 
@@ -182,22 +186,24 @@ link = try $ do
 autolink :: JiraParser Inline
 autolink = do
   guard . not . stateInLink =<< getState
-  AutoLink <$> (email' <|> url) <?> "email or other URL"
+  AutoLink <$> (email' <|> url True) <?> "email or other URL"
     where email' = (\(URL e) -> URL ("mailto:" <> e)) <$> email
 
--- | Parse a URL with scheme @file@, @ftp@, @http@, @https@, @irc@, @nntp@, or
--- @news@.
-url :: JiraParser URL
-url = try $ do
+-- | Parse a URL with scheme @file@, @ftp@, @http@, @https@, @irc@,
+-- @nntp@, or @news@; ignores @file@ if @isAutoLink@ is false.
+url :: Bool {-^ isAutoLink -} -> JiraParser URL
+url isAutoLink = try $ do
+  let urlChar' = if isAutoLink then urlPathChar else urlChar <|> char ' '
   urlScheme <- scheme
   sep <- pack <$> string "://"
-  rest <- pack <$> many urlChar
+  rest <- pack <$> many urlChar'
   return $ URL (urlScheme `append` sep `append` rest)
   where
     scheme = do
       first <- letter
       case first of
-        'f' -> ("file" <$ string "ile") <|> ("ftp" <$ string "tp")
+        'f' -> ("file" <$ (guard (not isAutoLink) *> string "ile")) <|>
+               ("ftp" <$ string "tp")
         'h' -> string "ttp" *> option "http" ("https" <$ char 's')
         'i' -> "irc" <$ string "rc"
         'n' -> ("nntp" <$ string "ntp") <|> ("news" <$ string "ews")
@@ -215,10 +221,56 @@ anchorLink = URL . pack <$> ((:) <$> char '#' <*> many1 urlChar)
 userLink :: JiraParser URL
 userLink = URL . pack <$> (char '~' *> many (noneOf "|]\n\r"))
 
+-- | Parses an external link, i.e., either a plain link to an external
+-- website, or a \"smart\" link or card.
+externalLink :: JiraParser (LinkType, URL)
+externalLink = do
+  url' <- url False
+  mSmartType <- optionMaybe (char '|' *> smartLinkType)
+  return $ case mSmartType of
+    Nothing -> (External, url')
+    Just st -> (st, url')
+
+-- | Finds the type of a "smart" link.
+smartLinkType :: JiraParser LinkType
+smartLinkType = string "smart-" *> choice
+  [ SmartLink <$ string "link"
+  , SmartCard <$ string "card"
+  ]
+
 -- | Parses a character which is allowed in URLs
 urlChar :: JiraParser Char
-urlChar = satisfy $ \c ->
-  c `notElem` ("|]" :: String) && ord c >= 32 && ord c <= 127
+urlChar = satisfy $ \case
+  ']' -> False    -- "]"
+  '|' -> False    -- "|"
+  x   -> ord x > 32 && ord x <= 126 -- excludes space
+
+-- | Parses a character in an URL path.
+urlPathChar :: JiraParser Char
+urlPathChar = satisfy $ \case
+  '!' -> True
+  '#' -> True
+  '$' -> True
+  '%' -> True
+  '&' -> True
+  '\''-> True
+  '(' -> True
+  ')' -> True
+  '*' -> True
+  '+' -> True
+  ',' -> True
+  '-' -> True
+  '.' -> True
+  '/' -> True
+  ':' -> True
+  ';' -> True
+  '=' -> True
+  '?' -> True
+  '@' -> True
+  '\\'-> True
+  '_' -> True
+  '~' -> True
+  x   -> isAlphaNum x && isAscii x
 
 --
 -- Color

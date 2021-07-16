@@ -309,6 +309,10 @@ tests = testGroup "Blocks"
       , testCase "with parameters" $
         parseJira noformat "{noformat:title=test}\nline 1\nline 2{noformat}\n" @?=
         Right (NoFormat [Parameter "title" "test"] "line 1\nline 2")
+
+      , testCase "without newline" $
+        parseJira noformat "{noformat}raw text{noformat}\n" @?=
+        Right (NoFormat [] "raw text")
       ]
 
     , testGroup "panel"
@@ -353,6 +357,10 @@ tests = testGroup "Blocks"
       , testCase "single line w\\o leading space" $
         parseJira blockQuote "bq.another test\n" @?=
         Right (BlockQuote [Para [Str "another", Space, Str "test"]])
+
+      , testCase "multiline block quote" $
+        parseJira blockQuote "{quote}\n    quote\n me\n{quote}\n" @?=
+        Right (BlockQuote [Para [Str "quote", Linebreak, Str "me"]])
 
       , testCase "multi-paragraph block quote" $
         parseJira blockQuote "{quote}\npara1\n\npara2\n{quote}\n" @?=

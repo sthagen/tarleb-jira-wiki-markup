@@ -170,8 +170,10 @@ blockQuote = try $ singleLineBq <|> multiLineBq
                    (string "bq." *> skipMany (char ' ') *>
                     inline `manyTill` (void newline <|> eof))
     multiLineBq = BlockQuote <$>
-                  (string "{quote}" *> optional blankline *>
-                   block `manyTill` try (string "{quote}"))
+                  (string "{quote}"
+                   *> optional blankline
+                   *> skipMany (char ' ')
+                   *> block `manyTill` try (string "{quote}"))
 
 -- | Parses four consecutive hyphens as @'HorizontalRule'@.
 horizontalRule :: JiraParser Block
@@ -181,8 +183,9 @@ horizontalRule = HorizontalRule <$
 -- | Parses a preformatted text into a @NoFormat@ element.
 noformat :: JiraParser Block
 noformat = try $ do
-  (_, params) <- string "{noformat" *> parameters <* char '}' <* newline
-  content <- anyChar `manyTill` try (string "{noformat}" *> blankline)
+  (_, params) <- string "{noformat" *> parameters <* char '}'
+  optional newline
+  content <- anyChar `manyTill` try (string "{noformat}" *> optional blankline)
   return $ NoFormat params (pack content)
 
 -- | Parses a preformatted text into a @NoFormat@ element.
