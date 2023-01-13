@@ -1,6 +1,6 @@
 {-|
 Module      : Text.Jira.ParserTests
-Copyright   : © 2019–2021 Albert Krewinkel
+Copyright   : © 2019–2023 Albert Krewinkel
 License     : MIT
 
 Maintainer  : Albert Krewinkel <tarleb@zeitkraut.de>
@@ -50,9 +50,22 @@ tests = testGroup "Parser"
       plainText ":)" @?=
       Right [Str "\\:)"]
 
+    , testCase "smiley and text" $
+      plainText ":D lol" @?=
+      Right [Str "\\:D", Space, Str "lol"]
+
     , testCase "icon after word" $
       plainText "f(x)" @?=
       Right [Str "f\\(x)"]
+
+    , testCase "icon-sequence at start of word" $
+      plainText ":PA" @?=
+      Right [SpecialChar ':', Str "PA"]
+
+    , testCase "icon-sequence followed by digit" $
+      plainText ":P2" @?=
+      Right [SpecialChar ':', Str "P2"]
+
 
     , testCase "special chars" $
       plainText "*not strong*" @?=

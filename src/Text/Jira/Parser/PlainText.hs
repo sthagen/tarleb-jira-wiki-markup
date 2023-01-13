@@ -1,6 +1,6 @@
 {-|
 Module      : Text.Jira.Parser.PlainText
-Copyright   : © 2019–2021 Albert Krewinkel
+Copyright   : © 2019–2023 Albert Krewinkel
 License     : MIT
 
 Maintainer  : Albert Krewinkel <tarleb@zeitkraut.de>
@@ -40,7 +40,7 @@ plainText = parseJira (normalizeInlines <$> many plainInlineParser)
 
 -- | Escapes text which would otherwise render as an icon.
 escapeIcon :: Parsec Text u Inline
-escapeIcon = Str . ("\\" `append`) . iconText <$> icon
+escapeIcon = Str . ("\\" `append`) . iconText <$> try icon
 
 plainSpecialChar :: Parsec Text u Inline
 plainSpecialChar = SpecialChar <$> oneOf specialChars

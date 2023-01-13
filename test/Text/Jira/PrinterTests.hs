@@ -1,7 +1,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 {-|
 Module      : Text.Jira.PrinterTests
-Copyright   : © 2019–2021 Albert Krewinkel
+Copyright   : © 2019–2023 Albert Krewinkel
 License     : MIT
 
 Maintainer  : Albert Krewinkel <tarleb@zeitkraut.de>
@@ -243,6 +243,10 @@ tests = testGroup "Printer"
     , testCase "colon is not escaped before space" $
       prettyInlines [SpecialChar ':', Space, Str "end"] @?=
       ": end"
+
+    , testCase "colon is not escaped before non-emoji word" $
+      prettyInlines [Space, SpecialChar ':', Str "PA"] @?=
+      " :PA"
 
     , testCase "closing brace between spaces" $
       prettyInlines [Space, SpecialChar '}', Space] @?=

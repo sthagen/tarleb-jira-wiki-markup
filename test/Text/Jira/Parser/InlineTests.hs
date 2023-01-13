@@ -1,6 +1,6 @@
 {-|
 Module      : Text.Jira.Parser.InlineTests
-Copyright   : © 2019–2021 Albert Krewinkel
+Copyright   : © 2019–2023 Albert Krewinkel
 License     : MIT
 
 Maintainer  : Albert Krewinkel <tarleb@zeitkraut.de>
@@ -405,6 +405,10 @@ tests = testGroup "Inline"
     , testCase "smiley within word" $
       parseJira (normalizeInlines <$> many1 inline) "C:DE" @?=
       Right [ Str "C", SpecialChar ':', Str "DE" ]
+
+    , testCase "backslash is literal if it's not necessary" $
+      parseJira (normalizeInlines <$> many1 inline) "\\:PA" @?=
+      Right [ SpecialChar '\\', SpecialChar ':', Str "PA"]
 
     , testCase "dash with spaces" $
       parseJira (many1 inline) "one  -- two" @?=

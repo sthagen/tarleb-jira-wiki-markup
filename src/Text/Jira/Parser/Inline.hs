@@ -3,7 +3,7 @@
 {-# LANGUAGE TupleSections #-}
 {-|
 Module      : Text.Jira.Parser.Inline
-Copyright   : © 2019–2021 Albert Krewinkel
+Copyright   : © 2019–2023 Albert Krewinkel
 License     : MIT
 
 Maintainer  : Albert Krewinkel <tarleb@zeitkraut.de>
@@ -110,7 +110,7 @@ entity = Entity . pack
 
 -- | Parses textual representation of an icon into an @'Emoji'@ element.
 emoji :: JiraParser Inline
-emoji = try (Emoji <$> icon <* notFollowedBy' letter <?> "emoji")
+emoji = try (Emoji <$> icon <?> "emoji")
 
 -- | Parses ASCII representation of en-dash or em-dash.
 dash :: JiraParser Inline
@@ -121,11 +121,15 @@ dash = try $ do
          , pure (Str "–")          -- en dash
          ] <* lookAhead (void (char ' ') <|> eof)
 
--- | Parses a special character symbol as a @Str@.
+-- | Parses a special character symbol as a 'SpecialChar'.
 specialChar :: JiraParser Inline
-specialChar = SpecialChar <$> (escapedChar <|> plainSpecialChar)
+specialChar = SpecialChar <$> (backslash <|> escapedChar <|> plainSpecialChar)
   <?> "special char"
   where
+    -- backslash before an icon-sequence that's not an emoji does *not*
+    -- work as an escape character.
+    backslash = try (char '\\' <* lookAhead (icon' *> alphaNum))
+
     escapedChar = try (char '\\' *> satisfy isPunctuation)
 
     plainSpecialChar = do
